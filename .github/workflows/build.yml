@@ -52,14 +52,14 @@ jobs:
           
       - name: Prepare deployment package
         run: |
-          mkdir -p deploy
-          cp -r dist/angular-project2/browser/* deploy/
-          cp web.config deploy/
+          mkdir -p artifact
+          cp -r dist/angular-project2/browser/* artifact/
+          cp web.config artifact/
       
       
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: angular-app-${{ github.run_id }}
-          path: deploy/
+          path: artifact/
 
