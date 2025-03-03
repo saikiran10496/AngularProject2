@@ -18,6 +18,11 @@ on:
         required: true
         type: string
         description: "The name of the artifact to download"
+      resource-group:
+        required: true
+        type: string
+        description: "The Azure resource group containing the web app"
+        default: "your-resource-group-name"
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -35,12 +40,12 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
+      
       - name: Configure Azure Web App
         uses: azure/cli@v1
         with:
           inlineScript: |
-            az webapp config appsettings set --name ${{ inputs.app-name }} --slot ${{ inputs.slot-name }} --settings WEBSITE_RUN_FROM_PACKAGE=0  
+            az webapp config appsettings set --name ${{ inputs.app-name }} --slot ${{ inputs.slot-name }} --resource-group ${{ inputs.resource-group }} --settings WEBSITE_RUN_FROM_PACKAGE=0
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -49,10 +54,10 @@ jobs:
           app-name: ${{ inputs.app-name }}
           slot-name: ${{ inputs.slot-name }}
           package: ./app-content
-
+          
       - name: Deploy completed
         run: |
           echo "Deployment completed."
           echo "If your app is not displaying correctly, check these common issues:"
           echo "1. Verify your web app is configured for static site hosting"
-          echo "2. Make sure WEBSITE_RUN_FROM_PACKAGE is set to 0 in your app settings"
+          echo "2. Ensure the files are properly deployed to the wwwroot directory"
