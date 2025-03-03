@@ -45,7 +45,7 @@ jobs:
         uses: azure/cli@v1
         with:
           inlineScript: |
-            az webapp config appsettings set --name ${{ inputs.app-name }} --slot ${{ inputs.slot-name }} --resource-group ${{ inputs.resource-group }} --settings WEBSITE_RUN_FROM_PACKAGE=0
+            az webapp config appsettings set --name ${{ inputs.app-name }} --resource-group ${{ inputs.resource-group }} --settings WEBSITE_RUN_FROM_PACKAGE=0
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
