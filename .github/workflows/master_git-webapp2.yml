@@ -24,11 +24,9 @@ jobs:
         uses: ngworker/angular-versions-action@v4
         with:
           # The base Angular version used to match the dependency versions
-          angular-version: 11.x
+          angular-version: 18.x
           # Path to the root folder containing the package.json and angular.json files
-          root-path: ./
-          
-          
+          root-path: ./ 
 
       - name: Set up Node.js version
         uses: actions/setup-node@v3
