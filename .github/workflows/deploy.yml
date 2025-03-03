@@ -42,4 +42,11 @@ jobs:
         with:
           app-name: ${{ inputs.app-name }}
           slot-name: ${{ inputs.slot-name }}
-          package: wwwroot
+          package: .
+
+      - name: Deploy completed
+        run: |
+          echo "Deployment completed."
+          echo "If your app is not displaying correctly, check these common issues:"
+          echo "1. Verify your web app is configured for static site hosting"
+          echo "2. Make sure WEBSITE_RUN_FROM_PACKAGE is set to 0 in your app settings"
