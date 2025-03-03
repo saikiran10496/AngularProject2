@@ -15,4 +15,5 @@ jobs:
       app-name: 'Git-webapp2'
       slot-name: 'Production'
       artifact-name: ${{ needs.build.outputs.artifact_name }}
+      resource-group: 'Git-grp'
     secrets: inherit
