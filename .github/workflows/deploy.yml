@@ -29,12 +29,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.artifact-name }}
-          path: wwwroot
+          path: ./app-content
       
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Configure Azure Web App
+        uses: azure/cli@v1
+        with:
+          inlineScript: |
+            az webapp config appsettings set --name ${{ inputs.app-name }} --slot ${{ inputs.slot-name }} --settings WEBSITE_RUN_FROM_PACKAGE=0  
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -42,7 +48,7 @@ jobs:
         with:
           app-name: ${{ inputs.app-name }}
           slot-name: ${{ inputs.slot-name }}
-          package: .
+          package: ./app-content
 
       - name: Deploy completed
         run: |
