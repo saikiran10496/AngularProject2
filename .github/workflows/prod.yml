@@ -12,7 +12,7 @@ jobs:
     uses: ./.github/workflows/deploy.yml
     with:
       environment: 'Production'
-      app-name: 'Angularproject1'
+      app-name: 'Git-webapp2'
       slot-name: 'Production'
       artifact-name: ${{ needs.build.outputs.artifact_name }}
     secrets: inherit
