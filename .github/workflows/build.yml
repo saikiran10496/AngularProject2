@@ -7,59 +7,29 @@ on:
         value: ${{ jobs.build.outputs.artifact_name }}
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     outputs:
       artifact_name: "angular-app-${{ github.run_id }}"
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+          lfs: false
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: '22.x'
           cache: 'npm'
       
       - name: Install dependencies
         run: npm ci
       
       - name: Build Angular app
-        run: npm run build --configuration=production
-      
-      - name: Create web.config
-        run: |
-          cat > web.config << 'EOL'
-          <?xml version="1.0" encoding="utf-8"?>
-          <configuration>
-            <system.webServer>
-              <rewrite>
-                <rules>
-                  <rule name="Angular Routes" stopProcessing="true">
-                    <match url=".*" />
-                    <conditions logicalGrouping="MatchAll">
-                      <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-                      <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-                    </conditions>
-                    <action type="Rewrite" url="/" />
-                  </rule>
-                </rules>
-              </rewrite>
-              <staticContent>
-                <mimeMap fileExtension=".json" mimeType="application/json" />
-              </staticContent>
-            </system.webServer>
-          </configuration>
-          EOL
-          
-      - name: Prepare deployment package
-        run: |
-          mkdir -p artifact
-          cp -r dist/angular-project2/browser/* artifact/
-          cp web.config artifact/
-      
+        run: npm run build
       
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
-          name: angular-app-${{ github.run_id }}
-          path: artifact/
-
+          name: "angular-app-${{ github.run_id }}"
+          path: dist/angular-webapp/browser/
