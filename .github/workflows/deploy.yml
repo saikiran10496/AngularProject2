@@ -11,21 +11,13 @@ on:
         type: string
         description: "The name of the Azure Web App"
       slot-name:
-        required: true
+        required: false
         type: string
-        description: "The slot name to deploy to"
-      artifact-name:
-        required: true
-        type: string
-        description: "The name of the artifact to download"
-      resource-group:
-        required: true
-        type: string
-        description: "The Azure resource group containing the web app"
-        default: "your-resource-group-name"
+        description: "The slot name to deploy to (optional)"
+        default: "production"
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     environment:
       name: ${{ inputs.environment }}
     
@@ -33,19 +25,13 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.artifact-name }}
-          path: ./app-content
+          name: angular-app-${{ github.run_id }}
+          path: dist
       
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Configure Azure Web App
-        uses: azure/cli@v1
-        with:
-          inlineScript: |
-            az webapp config appsettings set --name ${{ inputs.app-name }} --resource-group ${{ inputs.resource-group }} --settings WEBSITE_RUN_FROM_PACKAGE=0
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -53,11 +39,4 @@ jobs:
         with:
           app-name: ${{ inputs.app-name }}
           slot-name: ${{ inputs.slot-name }}
-          package: ./app-content
-          
-      - name: Deploy completed
-        run: |
-          echo "Deployment completed."
-          echo "If your app is not displaying correctly, check these common issues:"
-          echo "1. Verify your web app is configured for static site hosting"
-          echo "2. Ensure the files are properly deployed to the wwwroot directory"
+          package: dist
