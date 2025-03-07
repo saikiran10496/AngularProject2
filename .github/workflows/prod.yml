@@ -1,19 +1,20 @@
-name: Build and Deploy Angular App to Production
+name: Azure Web App CI/CD
 on:
   push:
     branches:
       - master
-  workflow_dispatch:
+
 jobs:
   build:
     uses: ./.github/workflows/build.yml
+    secrets: inherit
+    
   deploy:
     needs: build
     uses: ./.github/workflows/deploy.yml
     with:
-      environment: 'Production'
-      app-name: 'Git-webapp2'
-      slot-name: ''
-      artifact-name: ${{ needs.build.outputs.artifact_name }}
-      resource-group: 'Git-grp'
+      environment: 'production'
+      app-name: 'Angular-webapp'  # Replace with your Azure Web App name
+      # slot-name: 'production'  # Optional, defaults to production
+      # artifact-name: ${{ needs.build.outputs.artifact_name }}
     secrets: inherit
