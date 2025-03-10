@@ -7,41 +7,35 @@ jobs:
   list-files:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # This is important to get all history for comparing changes
-          
-      - name: List all changed files
+      - name: Get changed files using GitHub API
+        id: changed-files
         run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO="${{ github.repository }}"
+          
+          echo "Fetching files for PR #$PR_NUMBER in $REPO"
+          FILES=$(curl -s -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/files" | jq -r '.[] | .filename')
+          
           echo "Files changed in this PR:"
-          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
+          echo "$FILES"
           
-      - name: Get and log file count
-        id: file-count
-        run: |
-          ADDED_COUNT=$(git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep '^A' | wc -l)
-          MODIFIED_COUNT=$(git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep '^M' | wc -l)
-          DELETED_COUNT=$(git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep '^D' | wc -l)
-          TOTAL_COUNT=$(git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | wc -l)
+          # Count files by type
+          ADDED=$(curl -s -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/files" | jq -r '.[] | select(.status == "added") | .filename')
+          MODIFIED=$(curl -s -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/files" | jq -r '.[] | select(.status == "modified") | .filename')
+          REMOVED=$(curl -s -H "Authorization: token ${{ github.token }}" \
+            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/files" | jq -r '.[] | select(.status == "removed") | .filename')
           
-          echo "Added files: $ADDED_COUNT"
-          echo "Modified files: $MODIFIED_COUNT"
-          echo "Deleted files: $DELETED_COUNT"
-          echo "Total changed files: $TOTAL_COUNT"
-          
-          echo "added_count=$ADDED_COUNT" >> $GITHUB_OUTPUT
-          echo "modified_count=$MODIFIED_COUNT" >> $GITHUB_OUTPUT
-          echo "deleted_count=$DELETED_COUNT" >> $GITHUB_OUTPUT
-          echo "total_count=$TOTAL_COUNT" >> $GITHUB_OUTPUT
-          
-      - name: List Files by Type
-        run: |
           echo "### Added files:"
-          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep '^A' | cut -f2-
+          if [ -z "$ADDED" ]; then echo "None"; else echo "$ADDED"; fi
           
           echo "### Modified files:"
-          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep '^M' | cut -f2-
+          if [ -z "$MODIFIED" ]; then echo "None"; else echo "$MODIFIED"; fi
           
-          echo "### Deleted files:"
-          git diff --name-status ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep '^D' | cut -f2-
+          echo "### Removed files:"
+          if [ -z "$REMOVED" ]; then echo "None"; else echo "$REMOVED"; fi
+          
+          TOTAL_COUNT=$(echo "$FILES" | wc -l)
+          echo "Total changed files: $TOTAL_COUNT"
