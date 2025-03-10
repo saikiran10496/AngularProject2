@@ -1,0 +1,30 @@
+name: Commit File Change Log
+on:
+  push:
+    branches:
+      - '*'
+    
+jobs:
+  list-commit-files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: List changed files in commit
+        run: |
+          echo "Files changed in commit ${{ github.sha }}:"
+          git diff-tree --no-commit-id --name-status -r ${{ github.sha }}
+          
+      - name: Get detailed file changes
+        run: |
+          echo "### Added files:"
+          git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^A' | cut -f2-
+          
+          echo "### Modified files:"
+          git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^M' | cut -f2-
+          
+          echo "### Deleted files:"
+          git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^D' | cut -f2-
