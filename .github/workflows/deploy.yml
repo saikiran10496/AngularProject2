@@ -22,16 +22,31 @@ jobs:
       name: ${{ inputs.environment }}
     
     steps:
-      - name: Download artifact
+      - name: Download artifact for production
+        if: inputs.environment == 'production'
         uses: actions/download-artifact@v4
         with:
           name: angular-app-${{ github.run_id }}
           path: dist
+
+      - name: Download artifact for dev
+        if: inputs.environment == 'dev'
+        uses: actions/download-artifact@v4 
+        with: 
+          name: angular-app2-${{ github.run_id }} 
+          path: dist 
       
-      - name: Azure Login
+      - name: Azure Login for Production
+        if: inputs.environment == 'production'
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Azure Login for Dev
+        if: inputs.environment == 'dev'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_DEV }}
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp

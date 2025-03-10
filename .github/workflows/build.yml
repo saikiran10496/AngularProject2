@@ -5,11 +5,16 @@ on:
       artifact_name:
         description: "The name of the build artifact"
         value: ${{ jobs.build.outputs.artifact_name }}
+      artifact_name_dev:  # New output
+        description: "The name of the dev build artifact"
+        value: ${{ jobs.build.outputs.artifact_name_dev }}
+      
 jobs:
   build:
     runs-on: windows-latest
     outputs:
       artifact_name: "angular-app-${{ github.run_id }}"
+      artifact_name_dev: "angular-app2-${{ github.run_id }}"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,3 +38,11 @@ jobs:
         with:
           name: "angular-app-${{ github.run_id }}"
           path: dist/angular-project2/browser/
+
+      - name: Upload artifact for dev environment  # New step
+        uses: actions/upload-artifact@v4
+        with:
+          name: "angular-app2-${{ github.run_id }}"
+          path: dist/angular-project2/browser/
+
+      
