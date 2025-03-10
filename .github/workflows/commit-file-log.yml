@@ -16,15 +16,37 @@ jobs:
       - name: List changed files in commit
         run: |
           echo "Files changed in commit ${{ github.sha }}:"
-          git diff-tree --no-commit-id --name-status -r ${{ github.sha }}
+          if [[ $(git rev-parse --is-merge-commit ${{ github.sha }}) == "true" ]]; then
+            echo "This is a merge commit. Getting parent commits..."
+            PARENT1=$(git rev-parse ${{ github.sha }}^1)
+            PARENT2=$(git rev-parse ${{ github.sha }}^2)
+            echo "Showing changes between parent commits $PARENT1 and $PARENT2"
+            git diff --name-status $PARENT1 $PARENT2
+          else
+            git diff-tree --no-commit-id --name-status -r ${{ github.sha }}
+          fi
           
       - name: Get detailed file changes
         run: |
-          echo "### Added files:"
-          git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^A' | cut -f2-
-          
-          echo "### Modified files:"
-          git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^M' | cut -f2-
-          
-          echo "### Deleted files:"
-          git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^D' | cut -f2-
+          if [[ $(git rev-parse --is-merge-commit ${{ github.sha }}) == "true" ]]; then
+            PARENT1=$(git rev-parse ${{ github.sha }}^1)
+            PARENT2=$(git rev-parse ${{ github.sha }}^2)
+            
+            echo "### Added files:"
+            git diff --name-status $PARENT1 $PARENT2 | grep '^A' | cut -f2- || echo "None"
+            
+            echo "### Modified files:"
+            git diff --name-status $PARENT1 $PARENT2 | grep '^M' | cut -f2- || echo "None"
+            
+            echo "### Deleted files:"
+            git diff --name-status $PARENT1 $PARENT2 | grep '^D' | cut -f2- || echo "None"
+          else
+            echo "### Added files:"
+            git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^A' | cut -f2- || echo "None"
+            
+            echo "### Modified files:"
+            git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^M' | cut -f2- || echo "None"
+            
+            echo "### Deleted files:"
+            git diff-tree --no-commit-id --name-status -r ${{ github.sha }} | grep '^D' | cut -f2- || echo "None"
+          fi
