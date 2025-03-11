@@ -77,8 +77,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: changed-files
-          path: ${{ github.workspace }}/artifacts/
-          if-no-files-found: error  # Fail if no files exist
+          path: artifacts/**  # Uploads all files inside artifacts folder
+          if-no-files-found: error  # Ensures failure if no files exist
           compression-level: 6
+          overwrite: false
+          include-hidden-files: false
+
           overwrite: false
           include-hidden-files: false
