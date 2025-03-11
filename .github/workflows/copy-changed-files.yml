@@ -28,7 +28,7 @@ jobs:
         shell: pwsh
         run: |
           $sourceDir = "${{ github.workspace }}"
-          $destDir = "$sourceDir\artifacts"
+          $destDir = "$sourceDir/artifacts"
 
           # Ensure artifacts directory exists
           if (!(Test-Path -Path $destDir)) {
@@ -45,15 +45,15 @@ jobs:
           }
 
           foreach ($file in $changedFiles) {
-            # Convert file path to Windows format
-            $file = $file.Trim() -replace "/", "\"
+            # Normalize file path to Unix-style
+            $file = $file.Trim() -replace "\\", "/"
 
             if ($file -eq '') { continue }
 
             Write-Host "Processing: $file"
 
-            $sourcePath = "$sourceDir\$file"
-            $destPath = "$destDir\$file"
+            $sourcePath = "$sourceDir/$file"
+            $destPath = "$destDir/$file"
             $destFolder = Split-Path -Path $destPath -Parent
 
             if (!(Test-Path -Path $sourcePath)) {
@@ -69,12 +69,16 @@ jobs:
             Write-Host "✅ Copied: $file"
           }
 
+          # Debug: List contents of artifacts directory
+          Write-Host "📂 Contents of artifacts directory:"
+          Get-ChildItem -Path $destDir -Recurse
+
       - name: Upload Changed Files
         uses: actions/upload-artifact@v4
         with:
           name: changed-files
-          path: artifacts/
-          if-no-files-found: warn
+          path: ${{ github.workspace }}/artifacts/
+          if-no-files-found: error  # Fail if no files exist
           compression-level: 6
           overwrite: false
           include-hidden-files: false
