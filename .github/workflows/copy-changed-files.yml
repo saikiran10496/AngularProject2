@@ -1,0 +1,61 @@
+name: Copy Changed Files
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+
+jobs:
+  copy-files:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Get Changed Files
+      id: changed-files
+      uses: tj-actions/changed-files@v44
+
+    - name: Echo Changed Files
+      run: |
+        echo "Changed Files in this Commit:"
+        echo "${{ steps.changed-files.outputs.all_changed_files }}"
+      shell: bash
+
+    - name: Copy Changed Files
+      run: |
+        $sourceDir = "${{ github.workspace }}"
+        $destDir = "${{ github.workspace }}\artifacts"
+        New-Item -ItemType Directory -Path $destDir -Force
+
+        $changedFiles = "${{ steps.changed-files.outputs.all_changed_files }}" -split "`n"
+
+        if ($changedFiles.Count -eq 0) {
+          Write-Host "No changed files found."
+          exit 0
+        }
+
+        foreach ($file in $changedFiles) {
+          $file = $file.Trim()
+          Write-Host "Processing: $file"
+
+          if (Test-Path -Path "$sourceDir\$file" -PathType Leaf) {
+            $destPath = "$destDir\$file"
+            $destFolder = Split-Path -Path $destPath -Parent
+            if (!(Test-Path -Path $destFolder)) {
+              New-Item -ItemType Directory -Path $destFolder -Force
+            }
+            Copy-Item -Path "$sourceDir\$file" -Destination "$destPath" -Force
+            Write-Host "Copied: $file"
+          }
+        }
+      shell: pwsh
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: "changed-source-${{ github.run_id }}"
+        path: ${{ github.workspace }}/filtered-source/
+        if-no-files-found: warn
