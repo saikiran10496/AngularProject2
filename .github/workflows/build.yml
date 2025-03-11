@@ -16,12 +16,75 @@ jobs:
         with:
           submodules: true
           lfs: false
+          fetch-depth: 0
+      
+      - name: Copy Changed Files
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $sourceDir = "${{ github.workspace }}"
+          $destDir = "${{ github.workspace }}/filtered-source"
+          
+          # Create artifacts directory
+          New-Item -Path $destDir -ItemType Directory -Force
+          
+          # Get the commit SHA
+          $commitSha = "${{ github.sha }}"
+          $previousCommitSha = git rev-parse "$commitSha^"
+          
+          Write-Host "Current commit: $commitSha"
+          Write-Host "Previous commit: $previousCommitSha"
+          
+          # Get changed files between commits
+          $changedFiles = git diff --name-only $previousCommitSha $commitSha
+          
+          $fileCount = 0
+          
+          foreach ($file in $changedFiles) {
+            # Convert forward slashes to backslashes for Windows paths
+            $filePath = $file.Replace("/", "\")
+            $path = Split-Path -Path $filePath
+            
+            # Filter files from specific directories - modify these to match your Angular project structure
+            if ($path.Contains("src") -or $path.Contains("assets") -or $path.Contains("angular.json")) {
+              $fileCount++
+              Write-Host ".....Changed File: $file"
+              
+              # Create directory structure
+              $targetDir = "$destDir\$path"
+              if (!(Test-Path -Path $targetDir)) {
+                New-Item -Path $targetDir -ItemType Directory -Force
+              }
+              
+              # Copy the file
+              $sourceFile = "$sourceDir\$file"
+              if (Test-Path -Path $sourceFile -PathType Leaf) {
+                Write-Host "Copying File: $sourceFile to $targetDir"
+                Copy-Item -Path $sourceFile -Destination $targetDir -Force
+              }
+            }
+          }
+          
+          Write-Host "Total files copied: $fileCount" -ForegroundColor Green
+          
+          if ($fileCount -eq 0) {
+            Write-Host "No files matching the criteria were found to copy."
+            Write-Host "Copying all source files to maintain build functionality."
+            # If no specific files changed, copy the entire project
+            Copy-Item -Path "$sourceDir\src" -Destination "$destDir\" -Recurse -Force
+            Copy-Item -Path "$sourceDir\angular.json" -Destination "$destDir\" -Force
+            Copy-Item -Path "$sourceDir\package.json" -Destination "$destDir\" -Force
+            Copy-Item -Path "$sourceDir\package-lock.json" -Destination "$destDir\" -Force
+            Copy-Item -Path "$sourceDir\tsconfig*.json" -Destination "$destDir\" -Force
+          }
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22.x'
           cache: 'npm'
+          cache-dependency-path: package-lock.json
       
       - name: Install dependencies
         run: npm ci
@@ -29,18 +92,15 @@ jobs:
       - name: Build Angular app
         run: npm run build
       
-      - name: Upload artifact for deployment job prod environment
-        if: inputs.environment == 'production'
+      - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
-          name: "angular-app-${{ github.run_id }}"
+          name: "angular-app${{ inputs.environment == 'dev' && '2' || '' }}-${{ github.run_id }}"
           path: dist/angular-project2/browser/
-
-      - name: Upload artifact for dev environment  # New step
-        if: inputs.environment == 'dev'
+          
+      - name: Upload source artifact
         uses: actions/upload-artifact@v4
         with:
-          name: "angular-app2-${{ github.run_id }}"
-          path: dist/angular-project2/browser/
-
-      
+          name: "changed-source-${{ github.run_id }}"
+          path: ${{ github.workspace }}/filtered-source/
+          if-no-files-found: warn

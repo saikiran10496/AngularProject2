@@ -3,6 +3,10 @@ on:
   push: 
     branches: 
       - develop  # Or any branch you want to trigger the dev deployment to
+    paths-ignore:
+      - '**.yml'
+      - 'README.md'
+      - '.gitignore'
 
 jobs: 
   build: 
