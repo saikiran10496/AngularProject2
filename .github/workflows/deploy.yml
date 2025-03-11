@@ -43,10 +43,17 @@ jobs:
             Write-Host $_.FullName
           }
       
-      - name: Azure Login
+      - name: Azure Login for Dev
+        if: inputs.environment == 'dev'
         uses: azure/login@v1
         with:
-          creds: ${{ inputs.environment == 'dev' ? secrets.AZURE_CREDENTIALS_DEV : secrets.AZURE_CREDENTIALS }}
+          creds: ${{ secrets.AZURE_CREDENTIALS_DEV }}
+          
+      - name: Azure Login for Production
+        if: inputs.environment == 'production'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
