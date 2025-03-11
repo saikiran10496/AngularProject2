@@ -77,5 +77,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: changed-files
-          path: ${{ github.workspace }}\artifacts\**  # ✅ Use absolute path
+          path: ${{ github.workspace }}/artifacts/.github/workflows/copy-changed-files.yml
           if-no-files-found: error
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
