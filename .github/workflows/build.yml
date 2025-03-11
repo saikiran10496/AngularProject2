@@ -1,20 +1,25 @@
 name: Build Angular App
 on:
   workflow_call:
-    outputs:
-      artifact_name:
-        description: "The name of the build artifact"
-        value: ${{ jobs.build.outputs.artifact_name }}
-      artifact_name_dev:  # New output
-        description: "The name of the dev build artifact"
-        value: ${{ jobs.build.outputs.artifact_name_dev }}
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: "The environment to deploy to (e.g., dev, qa, prod)"
+   # outputs:
+    #  artifact_name:
+     #   description: "The name of the build artifact"
+      #  value: ${{ jobs.build.outputs.artifact_name }}
+     # artifact_name_dev:  # New output
+      #  description: "The name of the dev build artifact"
+       # value: ${{ jobs.build.outputs.artifact_name_dev }}
       
 jobs:
   build:
     runs-on: windows-latest
-    outputs:
-      artifact_name: "angular-app-${{ github.run_id }}"
-      artifact_name_dev: "angular-app2-${{ github.run_id }}"
+    #outputs:
+    #  artifact_name: "angular-app-${{ github.run_id }}"
+    #  artifact_name_dev: "angular-app2-${{ github.run_id }}"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +45,7 @@ jobs:
           path: dist/angular-project2/browser/
 
       - name: Upload artifact for dev environment  # New step
+        if: inputs.environment == 'dev'
         uses: actions/upload-artifact@v4
         with:
           name: "angular-app2-${{ github.run_id }}"
