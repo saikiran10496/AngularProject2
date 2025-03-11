@@ -30,11 +30,9 @@ jobs:
         run: |
           $sourceDir = "${{ github.workspace }}"
           $destDir = "${{ github.workspace }}/changed-files"
-          $flatDir = "${{ github.workspace }}/changed-files/all-files-flat"
           
-          # Create artifacts directories
+          # Create artifacts directory
           New-Item -Path $destDir -ItemType Directory -Force
-          New-Item -Path $flatDir -ItemType Directory -Force
           
           # Get the commit SHA
           $commitSha = "$env:COMMIT_ID"
@@ -61,14 +59,11 @@ jobs:
             $fileCount++
             Write-Host ".....Processing Changed File: $file"
             
-            # Get the filename without path
-            $fileName = Split-Path -Path $file -Leaf
-            
             # Convert forward slashes to backslashes for Windows paths
             $filePath = $file.Replace("/", "\")
             $path = Split-Path -Path $filePath
             
-            # Create directory structure for maintaining original structure
+            # Create directory structure
             if ($path) {
               $targetDir = "$destDir\$path"
               Write-Host "Creating directory: $targetDir"
@@ -79,9 +74,9 @@ jobs:
               $targetDir = $destDir
             }
             
-            # Copy the file to original structure
+            # Copy the file
             $sourceFile = "$sourceDir\$file"
-            $destinationFile = "$targetDir\$fileName"
+            $destinationFile = "$targetDir\$(Split-Path -Path $file -Leaf)"
             
             if (Test-Path -Path $sourceFile -PathType Leaf) {
               Write-Host "Copying File: $sourceFile to $destinationFile"
@@ -90,12 +85,6 @@ jobs:
                 if (Test-Path -Path $destinationFile -PathType Leaf) {
                   Write-Host "Successfully copied to $destinationFile" -ForegroundColor Green
                   $copiedFiles += $destinationFile
-                  
-                  # Also copy to flat directory with a unique name
-                  $flatFileName = if ($path) { "$($path.Replace('\', '-'))-$fileName" } else { $fileName }
-                  $flatDestFile = "$flatDir\$flatFileName"
-                  Copy-Item -Path $sourceFile -Destination $flatDestFile -Force
-                  Write-Host "Also copied to flat directory as: $flatDestFile" -ForegroundColor Green
                 } else {
                   Write-Host "Failed to copy to $destinationFile - file doesn't exist after copy" -ForegroundColor Red
                 }
@@ -132,10 +121,10 @@ jobs:
           }
           
           "" | Out-File -FilePath $summaryFile -Append
-          "## Files in Artifact:" | Out-File -FilePath $summaryFile -Append
-          "The changed files are available in this artifact in two locations:" | Out-File -FilePath $summaryFile -Append
-          "1. In their original directory structure" | Out-File -FilePath $summaryFile -Append
-          "2. In a flat directory at `all-files-flat/` for easier access" | Out-File -FilePath $summaryFile -Append
+          "## Copied Files:" | Out-File -FilePath $summaryFile -Append
+          foreach ($file in $copiedFiles) {
+            "- $file" | Out-File -FilePath $summaryFile -Append
+          }
           
           Write-Host "Total files copied: $($copiedFiles.Count)" -ForegroundColor Green
           
