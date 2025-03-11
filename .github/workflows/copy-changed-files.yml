@@ -44,6 +44,13 @@ jobs:
           
           # Get changed files between commits
           $changedFiles = git diff --name-only $previousCommitSha $commitSha
+
+           # Echo list of changed files
+          Write-Host "======= CHANGED FILES LIST ======="
+          foreach ($file in $changedFiles) {
+            Write-Host $file
+          }
+          Write-Host "=================================="
           
           $fileCount = 0
           
