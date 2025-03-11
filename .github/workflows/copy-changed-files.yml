@@ -44,8 +44,8 @@ jobs:
           
           # Get changed files between commits
           $changedFiles = git diff --name-only $previousCommitSha $commitSha
-
-           # Echo list of changed files
+          
+          # Echo list of changed files
           Write-Host "======= CHANGED FILES LIST ======="
           foreach ($file in $changedFiles) {
             Write-Host $file
@@ -53,10 +53,11 @@ jobs:
           Write-Host "=================================="
           
           $fileCount = 0
+          $copiedFiles = @()
           
           foreach ($file in $changedFiles) {
             $fileCount++
-            Write-Host ".....Changed File: $file"
+            Write-Host ".....Processing Changed File: $file"
             
             # Convert forward slashes to backslashes for Windows paths
             $filePath = $file.Replace("/", "\")
@@ -65,6 +66,7 @@ jobs:
             # Create directory structure
             if ($path) {
               $targetDir = "$destDir\$path"
+              Write-Host "Creating directory: $targetDir"
               if (!(Test-Path -Path $targetDir)) {
                 New-Item -Path $targetDir -ItemType Directory -Force
               }
@@ -74,11 +76,38 @@ jobs:
             
             # Copy the file
             $sourceFile = "$sourceDir\$file"
+            $destinationFile = "$targetDir\$(Split-Path -Path $file -Leaf)"
+            
             if (Test-Path -Path $sourceFile -PathType Leaf) {
-              Write-Host "Copying File: $sourceFile to $targetDir"
-              Copy-Item -Path $sourceFile -Destination $targetDir -Force
+              Write-Host "Copying File: $sourceFile to $destinationFile"
+              try {
+                Copy-Item -Path $sourceFile -Destination $destinationFile -Force
+                if (Test-Path -Path $destinationFile -PathType Leaf) {
+                  Write-Host "Successfully copied to $destinationFile" -ForegroundColor Green
+                  $copiedFiles += $destinationFile
+                } else {
+                  Write-Host "Failed to copy to $destinationFile - file doesn't exist after copy" -ForegroundColor Red
+                }
+              } catch {
+                Write-Host "Error copying file: $_" -ForegroundColor Red
+              }
+            } else {
+              Write-Host "Source file not found: $sourceFile" -ForegroundColor Yellow
             }
           }
+          
+          # List all files in the destination directory
+          Write-Host "======= FILES IN DESTINATION DIRECTORY ======="
+          if (Test-Path -Path $destDir) {
+            $allDestFiles = Get-ChildItem -Path $destDir -Recurse -File | Select-Object -ExpandProperty FullName
+            foreach ($file in $allDestFiles) {
+              Write-Host $file
+            }
+            Write-Host "Total files found in destination: $($allDestFiles.Count)"
+          } else {
+            Write-Host "Destination directory does not exist" -ForegroundColor Red
+          }
+          Write-Host "=============================================="
           
           # Create a summary file
           $summaryFile = "$destDir\change-summary.md"
@@ -91,7 +120,13 @@ jobs:
             "- $file" | Out-File -FilePath $summaryFile -Append
           }
           
-          Write-Host "Total files copied: $fileCount" -ForegroundColor Green
+          "" | Out-File -FilePath $summaryFile -Append
+          "## Copied Files:" | Out-File -FilePath $summaryFile -Append
+          foreach ($file in $copiedFiles) {
+            "- $file" | Out-File -FilePath $summaryFile -Append
+          }
+          
+          Write-Host "Total files copied: $($copiedFiles.Count)" -ForegroundColor Green
           
           if ($fileCount -eq 0) {
             Write-Host "No files were changed in this commit." -ForegroundColor Yellow
