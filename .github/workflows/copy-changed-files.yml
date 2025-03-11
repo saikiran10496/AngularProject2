@@ -1,6 +1,12 @@
-name: Detect and Copy Changed Files
+name: Copy Changed Files
 
 on:
+  workflow_dispatch:
+    inputs:
+      commit_id:
+        description: 'Commit ID to analyze (defaults to latest)'
+        required: false
+        default: ''
   push:
     branches:
       - master
@@ -9,76 +15,99 @@ on:
 jobs:
   copy-changed-files:
     runs-on: windows-latest
-
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Get Changed Files
-        id: changed-files
-        uses: tj-actions/changed-files@v44
-
-      - name: List of Changed Files
-        run: |
-          echo "Changed Files in this Commit:"
-          echo "${{ steps.changed-files.outputs.all_changed_files }}"
-        shell: bash
-
+        with:
+          fetch-depth: 0
+      
       - name: Copy Changed Files
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_ID: ${{ github.event.inputs.commit_id || github.sha }}
         run: |
           $sourceDir = "${{ github.workspace }}"
-          $destDir = "$sourceDir\artifacts"
-
-          # Ensure artifacts directory exists
-          if (!(Test-Path -Path $destDir)) {
-            New-Item -ItemType Directory -Path $destDir -Force
-          }
-
-          # Convert GitHub Actions output into an array
-          $changedFilesRaw = "${{ steps.changed-files.outputs.all_changed_files }}"
-          $changedFiles = $changedFilesRaw -split "`n"
-
-          if ($changedFiles.Count -eq 0 -or $changedFiles[0] -eq '') {
-            Write-Host "⚠️ No changed files detected. Skipping copy step."
-            exit 0
-          }
-
+          $destDir = "${{ github.workspace }}/changed-files"
+          
+          # Create artifacts directory
+          New-Item -Path $destDir -ItemType Directory -Force
+          
+          # Get the commit SHA
+          $commitSha = "$env:COMMIT_ID"
+          Write-Host "Analyzing commit: $commitSha"
+          
+          # Get previous commit
+          $previousCommitSha = git rev-parse "$commitSha^"
+          Write-Host "Previous commit: $previousCommitSha"
+          
+          # Get changed files between commits
+          $changedFiles = git diff --name-only $previousCommitSha $commitSha
+          
+          $fileCount = 0
+          
           foreach ($file in $changedFiles) {
-            # Normalize file path to Windows format
-            $file = $file.Trim() -replace "/", "\"
-
-            if ($file -eq '') { continue }
-
-            Write-Host "Processing: $file"
-
-            $sourcePath = "$sourceDir\$file"
-            $destPath = "$destDir\$file"
-            $destFolder = Split-Path -Path $destPath -Parent
-
-            if (!(Test-Path -Path $sourcePath)) {
-              Write-Host "❌ Skipping non-existing file: $sourcePath"
-              continue
+            $fileCount++
+            Write-Host ".....Changed File: $file"
+            
+            # Convert forward slashes to backslashes for Windows paths
+            $filePath = $file.Replace("/", "\")
+            $path = Split-Path -Path $filePath
+            
+            # Create directory structure
+            if ($path) {
+              $targetDir = "$destDir\$path"
+              if (!(Test-Path -Path $targetDir)) {
+                New-Item -Path $targetDir -ItemType Directory -Force
+              }
+            } else {
+              $targetDir = $destDir
             }
-
-            if (!(Test-Path -Path $destFolder)) {
-              New-Item -ItemType Directory -Path $destFolder -Force
+            
+            # Copy the file
+            $sourceFile = "$sourceDir\$file"
+            if (Test-Path -Path $sourceFile -PathType Leaf) {
+              Write-Host "Copying File: $sourceFile to $targetDir"
+              Copy-Item -Path $sourceFile -Destination $targetDir -Force
             }
-
-            Copy-Item -Path $sourcePath -Destination $destPath -Force
-            Write-Host "✅ Copied: $file"
           }
-
-          # Debug: List contents of artifacts directory
-          Write-Host "📂 Contents of artifacts directory:"
-          Get-ChildItem -Path $destDir -Recurse
-
-      - name: Upload Changed Files
+          
+          # Create a summary file
+          $summaryFile = "$destDir\change-summary.md"
+          "# Changes in commit $commitSha" | Out-File -FilePath $summaryFile
+          "## Previous commit: $previousCommitSha" | Out-File -FilePath $summaryFile -Append
+          "## Total files changed: $fileCount" | Out-File -FilePath $summaryFile -Append
+          "" | Out-File -FilePath $summaryFile -Append
+          "## Changed Files:" | Out-File -FilePath $summaryFile -Append
+          foreach ($file in $changedFiles) {
+            "- $file" | Out-File -FilePath $summaryFile -Append
+          }
+          
+          Write-Host "Total files copied: $fileCount" -ForegroundColor Green
+          
+          if ($fileCount -eq 0) {
+            Write-Host "No files were changed in this commit." -ForegroundColor Yellow
+          }
+      
+      - name: Upload Changed Files Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: "changed-files-${{ github.run_id }}"
-          path: ${{ github.workspace }}/artifacts/.github/workflows/copy-changed-files.yml
-          if-no-files-found: error
-          compression-level: 6
-          overwrite: false
-          include-hidden-files: false
+          name: changed-files-${{ github.sha }}
+          path: ${{ github.workspace }}/changed-files/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Add Job Summary
+        shell: pwsh
+        run: |
+          $summaryFile = "${{ github.workspace }}/changed-files/change-summary.md"
+          
+          if (Test-Path -Path $summaryFile -PathType Leaf) {
+            $content = Get-Content -Path $summaryFile -Raw
+            
+            # Output to job summary
+            $content | Out-File -FilePath $env:GITHUB_STEP_SUMMARY
+          } else {
+            Write-Output "## No files were changed in this commit" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY
+          }
