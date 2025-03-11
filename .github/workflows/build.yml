@@ -1,6 +1,11 @@
 name: Build Angular App
 on:
   workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: "The environment to deploy to (e.g., dev, qa, prod)"
    # outputs:
     #  artifact_name:
      #   description: "The name of the build artifact"
@@ -40,6 +45,7 @@ jobs:
           path: dist/angular-project2/browser/
 
       - name: Upload artifact for dev environment  # New step
+        if: inputs.environment == 'dev'
         uses: actions/upload-artifact@v4
         with:
           name: "angular-app2-${{ github.run_id }}"
