@@ -2,7 +2,7 @@ name: Azure Web App CI/CD for Dev
 on: 
   push: 
     branches: 
-      - develop  # Or any branch you want to trigger the dev deployment
+      - develop  # Or any branch you want to trigger the dev deployment to
 
 jobs: 
   build: 
