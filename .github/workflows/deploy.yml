@@ -15,7 +15,6 @@ on:
         type: string
         description: "The slot name to deploy to (optional)"
         default: "production"
-        
 jobs:
   deploy:
     runs-on: windows-latest
@@ -23,37 +22,31 @@ jobs:
       name: ${{ inputs.environment }}
     
     steps:
-      - name: Download build artifact
+      - name: Download artifact for production
+        if: inputs.environment == 'production'
         uses: actions/download-artifact@v4
         with:
-          name: angular-app${{ inputs.environment == 'dev' && '2' || '' }}-${{ github.run_id }}
+          name: angular-app-${{ github.run_id }}
           path: dist
-      
-      - name: Download source artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: changed-source-${{ github.run_id }}
-          path: changed-source
-      
-      - name: List changed files
-        shell: pwsh
-        run: |
-          Write-Host "Changed files that will be deployed:"
-          Get-ChildItem -Path changed-source -Recurse -File | ForEach-Object {
-            Write-Host $_.FullName
-          }
-      
-      - name: Azure Login for Dev
+
+      - name: Download artifact for dev
         if: inputs.environment == 'dev'
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS_DEV }}
-          
+        uses: actions/download-artifact@v4 
+        with: 
+          name: angular-app2-${{ github.run_id }} 
+          path: dist 
+      
       - name: Azure Login for Production
         if: inputs.environment == 'production'
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Azure Login for Dev
+        if: inputs.environment == 'dev'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_DEV }}
       
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -62,11 +55,3 @@ jobs:
           app-name: ${{ inputs.app-name }}
           slot-name: ${{ inputs.slot-name }}
           package: dist
-      
-      - name: Log deployment details
-        shell: pwsh
-        run: |
-          Write-Host "Deployment completed to ${{ inputs.app-name }}" -ForegroundColor Green
-          Write-Host "Environment: ${{ inputs.environment }}" -ForegroundColor Green
-          Write-Host "Slot: ${{ inputs.slot-name }}" -ForegroundColor Green
-          Write-Host "Deployment URL: https://${{ inputs.app-name }}.azurewebsites.net"
