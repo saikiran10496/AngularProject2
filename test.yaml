@@ -29,45 +29,49 @@ steps:
       # Azure DevOps API configuration
       $organization = "$(System.CollectionUri)".TrimEnd('/')
       $project = "$(System.TeamProject)"
-      $repositoryId = "$(Build.Repository.ID)"
-      $apiVersion = "7.1-preview.1"
+      $repositoryId = "22918d6e-e2e4-46a5-9be3-9235b0e1d8f2"  # Hardcoded correct repository ID
+      $apiVersion = "7.1"
       
-      # Construct API URL
-      $apiUrl = "$organization/$project/_apis/git/repositories/$repositoryId/commits/$commitSha/changes?api-version=$apiVersion"
-      Write-Host "API URL: $apiUrl"
+      # Diagnostic Information
+      Write-Host "=============== Diagnostic Information ==============="
+      Write-Host "Organization URL: $organization"
+      Write-Host "Project Name: $project"
+      Write-Host "Repository ID: $repositoryId"
+      Write-Host "Access Token Available: $([string]::IsNullOrEmpty($env:SYSTEM_ACCESSTOKEN))"
+      Write-Host "==================================================="
       
       try {
-          # Create authorization header
-          $token = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":$(System.AccessToken)"))
+          # Construct API URL
+          $apiUrl = "$organization/$project/_apis/git/repositories/$repositoryId/commits/$commitSha/changes?api-version=$apiVersion"
+          Write-Host "API URL: $apiUrl"
+          
+          # Set up authentication header
+          $token = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":$env:SYSTEM_ACCESSTOKEN"))
           $headers = @{
-              'Authorization' = "Basic $token"
-              'Accept' = 'application/json'
+              Authorization = "Basic $token"
           }
           
-          # Call Azure DevOps API with verbose error reporting
+          # Make API request with verbose error handling
           try {
-              $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get -ErrorVariable restError -Verbose
+              $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get -ContentType "application/json" -ErrorVariable restError -Verbose
           }
           catch {
               Write-Host "API Response Error Details:"
-              Write-Host "StatusCode: $($_.Exception.Response.StatusCode.value__)"
-              Write-Host "StatusDescription: $($_.Exception.Response.StatusDescription)"
+              Write-Host "StatusCode:" $_.Exception.Response.StatusCode.value__
+              Write-Host "StatusDescription:" $_.Exception.Response.StatusDescription
               
-              # Get detailed error message
               $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
               $reader.BaseStream.Position = 0
               $reader.DiscardBufferedData()
               $responseBody = $reader.ReadToEnd()
-              Write-Host "Error Response Body: $responseBody"
+              Write-Host "Error Response Body:" $responseBody
               throw
           }
           
-          # Extract changed files from the response
+          # Process changed files
+          $changedFiles = @()
           if ($response.changes) {
               $changedFiles = $response.changes | ForEach-Object { $_.item.path }
-          } else {
-              Write-Host "No changes found in the response"
-              $changedFiles = @()
           }
           
           # Echo list of changed files
@@ -163,7 +167,6 @@ steps:
           Write-Host "##vso[task.logissue type=error]$ErrorMessage"
           exit 1
       }
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
 
 - task: PublishBuildArtifacts@1
   displayName: 'Publish Changed Files'
