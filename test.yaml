@@ -26,16 +26,24 @@ steps:
       $commitSha = "$(Build.SourceVersion)"
       Write-Host "Analyzing commit: $commitSha"
       
-      # Move to the source directory where the repo is cloned
-      Push-Location $sourceDir
+      # Azure DevOps API configuration
+      $organization = "$(System.CollectionUri)"
+      $project = "$(System.TeamProject)"
+      $repository = "$(Build.Repository.Name)"
+      $apiVersion = "7.1-preview.1"
+      
+      # Construct API URL
+      $apiUrl = "${organization}${project}/_apis/git/repositories/${repository}/commits/${commitSha}/changes?api-version=${apiVersion}"
+      Write-Host "API URL: $apiUrl"
       
       try {
-          # Get previous commit
-          $previousCommitSha = git rev-parse "$commitSha^"
-          Write-Host "Previous commit: $previousCommitSha"
+          # Call Azure DevOps API
+          $response = Invoke-RestMethod -Uri $apiUrl -Headers @{
+              'Authorization' = "Bearer $(System.AccessToken)"
+          } -Method Get
           
-          # Get changed files between commits
-          $changedFiles = git diff --name-only $previousCommitSha $commitSha
+          # Extract changed files from the response
+          $changedFiles = $response.changes | ForEach-Object { $_.item.path }
           
           # Echo list of changed files
           Write-Host "======= CHANGED FILES LIST ======="
@@ -104,7 +112,6 @@ steps:
           # Create a summary file
           $summaryFile = "$destDir\change-summary.md"
           "# Changes in commit $commitSha" | Out-File -FilePath $summaryFile
-          "## Previous commit: $previousCommitSha" | Out-File -FilePath $summaryFile -Append
           "## Total files changed: $fileCount" | Out-File -FilePath $summaryFile -Append
           "" | Out-File -FilePath $summaryFile -Append
           "## Changed Files:" | Out-File -FilePath $summaryFile -Append
@@ -129,10 +136,7 @@ steps:
           $ErrorMessage = $_.Exception.Message
           Write-Error "Exception: $ErrorMessage occurred while executing the script."
           Write-Host "##vso[task.logissue type=error]$ErrorMessage"
-      }
-      finally {
-          # Go back to the original location
-          Pop-Location
+          exit 1
       }
     workingDirectory: '$(System.DefaultWorkingDirectory)'
 
