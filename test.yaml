@@ -1,0 +1,109 @@
+trigger:
+ branches:
+   include:
+   - master
+   - Releases/*
+ paths:
+  exclude:
+  - '*.yml'
+pool:
+  vmImage: 'ubuntu-latest'
+ 
+name: $(SourceBranchName)_$(Date:yyyy-MM-dd)$(Rev:.r)
+
+steps:
+- task: PowerShell@2
+  displayName: "Copy Changed Files"
+  inputs:
+    targetType: 'inline'
+    script: |
+      $sourceDir = "$(Build.SourcesDirectory)"
+      $destDir = "$(Build.ArtifactStagingDirectory)"
+      
+      function GetFilesFromCommits
+      {
+          $commitNum = "$(Build.SourceVersion)"
+          Write-Host "Commit ID: $commitNum" -ForegroundColor Yellow
+          
+          $filePathlist = [System.Collections.ArrayList]@()
+          
+          # Use git command to get changed files in the commit
+          # This works because Azure Pipelines already clones the repo
+          Write-Host "Getting changed files using git command..." -ForegroundColor Cyan
+          
+          # Move to the source directory where the repo is cloned
+          Push-Location $sourceDir
+          
+          try {
+              # Get the list of changed files in the commit
+              $changedFiles = & git diff-tree --no-commit-id --name-only -r $commitNum
+              
+              if ($changedFiles -and $changedFiles.Count -gt 0) {
+                  foreach($file in $changedFiles) {
+                      [void]$filePathlist.Add($file)
+                      Write-Host ".....Changed File:" $file
+                  }
+                  
+                  # Get commit message for reference
+                  $commitMessage = & git log -1 --pretty=%B $commitNum
+                  Write-Host "Commit Message: $commitMessage" -ForegroundColor Cyan
+              } else {
+                  Write-Host "No files found in the commit." -ForegroundColor Yellow
+              }
+          }
+          catch {
+              Write-Error "Error executing git commands: $_"
+              throw
+          }
+          finally {
+              # Go back to the original location
+              Pop-Location
+          }
+          
+          # Process the changed files
+          foreach($filepath in $filePathlist)
+          {
+              $normalizedPath = $filepath.Replace("/","\")
+              $filename = Split-Path $normalizedPath -leaf
+              $path = Split-Path -Path $normalizedPath
+              
+              if ($path.Contains("RetailConnect") -or $path.Contains("SSIS") -or $path.Contains("SSRS"))
+              {
+                  $destinationPath = Join-Path $destDir $path
+                  if (!(Test-Path -path $destinationPath)) 
+                  {
+                      New-Item $destinationPath -Type Directory -Force
+                      Write-Host "Created directory: $destinationPath" -ForegroundColor Green
+                  }
+                  
+                  $sourcePath = Join-Path $sourceDir $normalizedPath
+                  if (Test-Path -Path $sourcePath -PathType Leaf)
+                  {
+                      Write-Host "Copying File: $sourcePath" -ForegroundColor Green
+                      Copy-Item -Path $sourcePath -Destination $destinationPath -Force
+                  }
+                  else {
+                      Write-Host "Warning: Source file not found: $sourcePath" -ForegroundColor Yellow
+                  }
+              }
+              else {
+                  Write-Host "Skipping file not in target folders: $filepath" -ForegroundColor Yellow
+              }
+          }
+      }
+      
+      try
+      {
+          GetFilesFromCommits
+      }
+      catch
+      {
+          $ErrorMessage = $_.Exception.Message
+          Write-Error "Exception: $ErrorMessage occurred while executing the script."
+      }
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
