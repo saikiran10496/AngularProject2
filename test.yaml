@@ -11,6 +11,9 @@ pool:
   vmImage: 'windows-latest'
 
 steps:
+- checkout: self
+  fetchDepth: 0  # This is important to get the commit history
+
 - task: PowerShell@2
   displayName: "Copy Changed Files"
   inputs:
@@ -22,148 +25,109 @@ steps:
       # Create artifacts directory
       New-Item -Path $destDir -ItemType Directory -Force
       
-      # Get the commit SHA
+      # Get the commit SHA and parent commit
       $commitSha = "$(Build.SourceVersion)"
-      Write-Host "Analyzing commit: $commitSha"
+      Write-Host "Current commit: $commitSha"
       
-      # Azure DevOps API configuration
-      $organization = "$(System.CollectionUri)".TrimEnd('/')
-      $project = "$(System.TeamProject)"
-      $repositoryId = "$(Build.Repository.ID)"
-      $apiVersion = "7.1-preview.1"
+      # Get the parent commit SHA
+      $parentCommitSha = git rev-parse "$commitSha^"
+      Write-Host "Parent commit: $parentCommitSha"
       
-      # Construct API URL
-      $apiUrl = "$organization/$project/_apis/git/repositories/$repositoryId/commits/$commitSha/changes?api-version=$apiVersion"
-      Write-Host "API URL: $apiUrl"
+      # Get changed files using git diff
+      $changedFiles = git diff --name-only $parentCommitSha $commitSha
+      if ($LASTEXITCODE -ne 0) {
+          Write-Host "Falling back to first commit comparison..."
+          $firstCommit = git rev-list --max-parents=0 HEAD
+          $changedFiles = git diff --name-only $firstCommit $commitSha
+      }
       
-      try {
-          # Create authorization header
-          $token = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":$(System.AccessToken)"))
-          $headers = @{
-              'Authorization' = "Basic $token"
-              'Accept' = 'application/json'
-          }
+      # Echo list of changed files
+      Write-Host "======= CHANGED FILES LIST ======="
+      foreach ($file in $changedFiles) {
+          Write-Host $file
+      }
+      Write-Host "=================================="
+      
+      $fileCount = 0
+      $copiedFiles = @()
+      
+      foreach ($file in $changedFiles) {
+          $fileCount++
+          Write-Host ".....Processing Changed File: $file"
           
-          # Call Azure DevOps API with verbose error reporting
-          try {
-              $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get -ErrorVariable restError -Verbose
-          }
-          catch {
-              Write-Host "API Response Error Details:"
-              Write-Host "StatusCode: $($_.Exception.Response.StatusCode.value__)"
-              Write-Host "StatusDescription: $($_.Exception.Response.StatusDescription)"
-              
-              # Get detailed error message
-              $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-              $reader.BaseStream.Position = 0
-              $reader.DiscardBufferedData()
-              $responseBody = $reader.ReadToEnd()
-              Write-Host "Error Response Body: $responseBody"
-              throw
-          }
+          # Convert forward slashes to backslashes for Windows paths
+          $filePath = $file.Replace("/", "\")
+          $path = Split-Path -Path $filePath
           
-          # Extract changed files from the response
-          if ($response.changes) {
-              $changedFiles = $response.changes | ForEach-Object { $_.item.path }
+          # Create directory structure
+          if ($path) {
+              $targetDir = "$destDir\$path"
+              Write-Host "Creating directory: $targetDir"
+              if (!(Test-Path -Path $targetDir)) {
+                  New-Item -Path $targetDir -ItemType Directory -Force
+              }
           } else {
-              Write-Host "No changes found in the response"
-              $changedFiles = @()
+              $targetDir = $destDir
           }
           
-          # Echo list of changed files
-          Write-Host "======= CHANGED FILES LIST ======="
-          foreach ($file in $changedFiles) {
+          # Copy the file
+          $sourceFile = "$sourceDir\$file"
+          $destinationFile = "$targetDir\$(Split-Path -Path $file -Leaf)"
+          
+          if (Test-Path -Path $sourceFile -PathType Leaf) {
+              Write-Host "Copying File: $sourceFile to $destinationFile"
+              try {
+                  Copy-Item -Path $sourceFile -Destination $destinationFile -Force
+                  if (Test-Path -Path $destinationFile -PathType Leaf) {
+                      Write-Host "Successfully copied to $destinationFile" -ForegroundColor Green
+                      $copiedFiles += $destinationFile
+                  } else {
+                      Write-Host "Failed to copy to $destinationFile - file doesn't exist after copy" -ForegroundColor Red
+                  }
+              } catch {
+                  Write-Host "Error copying file: $_" -ForegroundColor Red
+              }
+          } else {
+              Write-Host "Source file not found: $sourceFile" -ForegroundColor Yellow
+          }
+      }
+      
+      # List all files in the destination directory
+      Write-Host "======= FILES IN DESTINATION DIRECTORY ======="
+      if (Test-Path -Path $destDir) {
+          $allDestFiles = Get-ChildItem -Path $destDir -Recurse -File | Select-Object -ExpandProperty FullName
+          foreach ($file in $allDestFiles) {
               Write-Host $file
           }
-          Write-Host "=================================="
-          
-          $fileCount = 0
-          $copiedFiles = @()
-          
-          foreach ($file in $changedFiles) {
-              $fileCount++
-              Write-Host ".....Processing Changed File: $file"
-              
-              # Convert forward slashes to backslashes for Windows paths
-              $filePath = $file.Replace("/", "\")
-              $path = Split-Path -Path $filePath
-              
-              # Create directory structure
-              if ($path) {
-                  $targetDir = "$destDir\$path"
-                  Write-Host "Creating directory: $targetDir"
-                  if (!(Test-Path -Path $targetDir)) {
-                      New-Item -Path $targetDir -ItemType Directory -Force
-                  }
-              } else {
-                  $targetDir = $destDir
-              }
-              
-              # Copy the file
-              $sourceFile = "$sourceDir\$file"
-              $destinationFile = "$targetDir\$(Split-Path -Path $file -Leaf)"
-              
-              if (Test-Path -Path $sourceFile -PathType Leaf) {
-                  Write-Host "Copying File: $sourceFile to $destinationFile"
-                  try {
-                      Copy-Item -Path $sourceFile -Destination $destinationFile -Force
-                      if (Test-Path -Path $destinationFile -PathType Leaf) {
-                          Write-Host "Successfully copied to $destinationFile" -ForegroundColor Green
-                          $copiedFiles += $destinationFile
-                      } else {
-                          Write-Host "Failed to copy to $destinationFile - file doesn't exist after copy" -ForegroundColor Red
-                      }
-                  } catch {
-                      Write-Host "Error copying file: $_" -ForegroundColor Red
-                  }
-              } else {
-                  Write-Host "Source file not found: $sourceFile" -ForegroundColor Yellow
-              }
-          }
-          
-          # List all files in the destination directory
-          Write-Host "======= FILES IN DESTINATION DIRECTORY ======="
-          if (Test-Path -Path $destDir) {
-              $allDestFiles = Get-ChildItem -Path $destDir -Recurse -File | Select-Object -ExpandProperty FullName
-              foreach ($file in $allDestFiles) {
-                  Write-Host $file
-              }
-              Write-Host "Total files found in destination: $($allDestFiles.Count)"
-          } else {
-              Write-Host "Destination directory does not exist" -ForegroundColor Red
-          }
-          Write-Host "=============================================="
-          
-          # Create a summary file
-          $summaryFile = "$destDir\change-summary.md"
-          "# Changes in commit $commitSha" | Out-File -FilePath $summaryFile
-          "## Total files changed: $fileCount" | Out-File -FilePath $summaryFile -Append
-          "" | Out-File -FilePath $summaryFile -Append
-          "## Changed Files:" | Out-File -FilePath $summaryFile -Append
-          foreach ($file in $changedFiles) {
-              "- $file" | Out-File -FilePath $summaryFile -Append
-          }
-          
-          "" | Out-File -FilePath $summaryFile -Append
-          "## Copied Files:" | Out-File -FilePath $summaryFile -Append
-          foreach ($file in $copiedFiles) {
-              "- $file" | Out-File -FilePath $summaryFile -Append
-          }
-          
-          Write-Host "Total files copied: $($copiedFiles.Count)" -ForegroundColor Green
-          
-          if ($fileCount -eq 0) {
-              Write-Host "No files were changed in this commit." -ForegroundColor Yellow
-              Write-Host "##vso[task.logissue type=warning]No files were changed in this commit."
-          }
+          Write-Host "Total files found in destination: $($allDestFiles.Count)"
+      } else {
+          Write-Host "Destination directory does not exist" -ForegroundColor Red
       }
-      catch {
-          $ErrorMessage = $_.Exception.Message
-          Write-Error "Exception: $ErrorMessage occurred while executing the script."
-          Write-Host "##vso[task.logissue type=error]$ErrorMessage"
-          exit 1
+      Write-Host "=============================================="
+      
+      # Create a summary file
+      $summaryFile = "$destDir\change-summary.md"
+      "# Changes in commit $commitSha" | Out-File -FilePath $summaryFile
+      "## Parent commit: $parentCommitSha" | Out-File -FilePath $summaryFile -Append
+      "## Total files changed: $fileCount" | Out-File -FilePath $summaryFile -Append
+      "" | Out-File -FilePath $summaryFile -Append
+      "## Changed Files:" | Out-File -FilePath $summaryFile -Append
+      foreach ($file in $changedFiles) {
+          "- $file" | Out-File -FilePath $summaryFile -Append
       }
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
+      
+      "" | Out-File -FilePath $summaryFile -Append
+      "## Copied Files:" | Out-File -FilePath $summaryFile -Append
+      foreach ($file in $copiedFiles) {
+          "- $file" | Out-File -FilePath $summaryFile -Append
+      }
+      
+      Write-Host "Total files copied: $($copiedFiles.Count)" -ForegroundColor Green
+      
+      if ($fileCount -eq 0) {
+          Write-Host "No files were changed in this commit." -ForegroundColor Yellow
+          Write-Host "##vso[task.logissue type=warning]No files were changed in this commit."
+      }
 
 - task: PublishBuildArtifacts@1
   displayName: 'Publish Changed Files'
