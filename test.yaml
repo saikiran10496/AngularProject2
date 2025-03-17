@@ -27,23 +27,48 @@ steps:
       Write-Host "Analyzing commit: $commitSha"
       
       # Azure DevOps API configuration
-      $organization = "$(System.CollectionUri)"
+      $organization = "$(System.CollectionUri)".TrimEnd('/')
       $project = "$(System.TeamProject)"
-      $repository = "$(Build.Repository.Name)"
+      $repositoryId = "$(Build.Repository.ID)"
       $apiVersion = "7.1-preview.1"
       
       # Construct API URL
-      $apiUrl = "${organization}${project}/_apis/git/repositories/${repository}/commits/${commitSha}/changes?api-version=${apiVersion}"
+      $apiUrl = "$organization/$project/_apis/git/repositories/$repositoryId/commits/$commitSha/changes?api-version=$apiVersion"
       Write-Host "API URL: $apiUrl"
       
       try {
-          # Call Azure DevOps API
-          $response = Invoke-RestMethod -Uri $apiUrl -Headers @{
-              'Authorization' = "Bearer $(System.AccessToken)"
-          } -Method Get
+          # Create authorization header
+          $token = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":$(System.AccessToken)"))
+          $headers = @{
+              'Authorization' = "Basic $token"
+              'Accept' = 'application/json'
+          }
+          
+          # Call Azure DevOps API with verbose error reporting
+          try {
+              $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get -ErrorVariable restError -Verbose
+          }
+          catch {
+              Write-Host "API Response Error Details:"
+              Write-Host "StatusCode: $($_.Exception.Response.StatusCode.value__)"
+              Write-Host "StatusDescription: $($_.Exception.Response.StatusDescription)"
+              
+              # Get detailed error message
+              $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+              $reader.BaseStream.Position = 0
+              $reader.DiscardBufferedData()
+              $responseBody = $reader.ReadToEnd()
+              Write-Host "Error Response Body: $responseBody"
+              throw
+          }
           
           # Extract changed files from the response
-          $changedFiles = $response.changes | ForEach-Object { $_.item.path }
+          if ($response.changes) {
+              $changedFiles = $response.changes | ForEach-Object { $_.item.path }
+          } else {
+              Write-Host "No changes found in the response"
+              $changedFiles = @()
+          }
           
           # Echo list of changed files
           Write-Host "======= CHANGED FILES LIST ======="
