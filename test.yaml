@@ -1,15 +1,14 @@
 trigger:
- branches:
-   include:
-   - master
-   - Releases/*
- paths:
-  exclude:
-  - '*.yml'
+  branches:
+    include:
+    - master
+    - develop
+  paths:
+    exclude:
+    - '*.yml'
+
 pool:
-  vmImage: 'ubuntu-latest'
- 
-name: $(SourceBranchName)_$(Date:yyyy-MM-dd)$(Rev:.r)
+  vmImage: 'windows-latest'
 
 steps:
 - task: PowerShell@2
@@ -18,121 +17,128 @@ steps:
     targetType: 'inline'
     script: |
       $sourceDir = "$(Build.SourcesDirectory)"
-      $destDir = "$(Build.ArtifactStagingDirectory)"
+      $destDir = "$(Build.ArtifactStagingDirectory)/changed-files"
       
-      function GetFilesFromCommits
-      {
-          $commitNum = "$(Build.SourceVersion)"
-          Write-Host "Commit ID: $commitNum" -ForegroundColor Yellow
+      # Create artifacts directory
+      New-Item -Path $destDir -ItemType Directory -Force
+      
+      # Get the commit SHA
+      $commitSha = "$(Build.SourceVersion)"
+      Write-Host "Analyzing commit: $commitSha"
+      
+      # Move to the source directory where the repo is cloned
+      Push-Location $sourceDir
+      
+      try {
+          # Get previous commit
+          $previousCommitSha = git rev-parse "$commitSha^"
+          Write-Host "Previous commit: $previousCommitSha"
           
-          $filePathlist = [System.Collections.ArrayList]@()
+          # Get changed files between commits
+          $changedFiles = git diff --name-only $previousCommitSha $commitSha
           
-          # Use git command to get changed files in the commit
-          Write-Host "Getting changed files using git command..." -ForegroundColor Cyan
+          # Echo list of changed files
+          Write-Host "======= CHANGED FILES LIST ======="
+          foreach ($file in $changedFiles) {
+              Write-Host $file
+          }
+          Write-Host "=================================="
           
-          # Move to the source directory where the repo is cloned
-          Push-Location $sourceDir
+          $fileCount = 0
+          $copiedFiles = @()
           
-          try {
-              # Check if this is a merge commit
-              $parentCount = & git cat-file -p $commitNum | Select-String "^parent" | Measure-Object | Select-Object -ExpandProperty Count
-              Write-Host "Commit has $parentCount parents (>1 means merge commit)" -ForegroundColor Yellow
+          foreach ($file in $changedFiles) {
+              $fileCount++
+              Write-Host ".....Processing Changed File: $file"
               
-              # Get the list of changed files in the commit
-              if ($parentCount -gt 1) {
-                  # For merge commits, compare with the first parent
-                  $changedFiles = & git diff-tree --no-commit-id --name-only -r $commitNum^1..$commitNum
-                  if (-not $changedFiles) {
-                      # Alternative approach for merge commits
-                      $changedFiles = & git show --name-only --pretty="" $commitNum
+              # Convert forward slashes to backslashes for Windows paths
+              $filePath = $file.Replace("/", "\")
+              $path = Split-Path -Path $filePath
+              
+              # Create directory structure
+              if ($path) {
+                  $targetDir = "$destDir\$path"
+                  Write-Host "Creating directory: $targetDir"
+                  if (!(Test-Path -Path $targetDir)) {
+                      New-Item -Path $targetDir -ItemType Directory -Force
                   }
               } else {
-                  $changedFiles = & git diff-tree --no-commit-id --name-only -r $commitNum
-                  if (-not $changedFiles) {
-                      # Try another approach
-                      $changedFiles = & git show --name-only --pretty="" $commitNum
-                  }
+                  $targetDir = $destDir
               }
               
-              if ($changedFiles -and $changedFiles.Count -gt 0) {
-                  foreach($file in $changedFiles) {
-                      if (-not [string]::IsNullOrWhiteSpace($file)) {
-                          [void]$filePathlist.Add($file)
-                          Write-Host ".....Changed File:" $file
+              # Copy the file
+              $sourceFile = "$sourceDir\$file"
+              $destinationFile = "$targetDir\$(Split-Path -Path $file -Leaf)"
+              
+              if (Test-Path -Path $sourceFile -PathType Leaf) {
+                  Write-Host "Copying File: $sourceFile to $destinationFile"
+                  try {
+                      Copy-Item -Path $sourceFile -Destination $destinationFile -Force
+                      if (Test-Path -Path $destinationFile -PathType Leaf) {
+                          Write-Host "Successfully copied to $destinationFile" -ForegroundColor Green
+                          $copiedFiles += $destinationFile
+                      } else {
+                          Write-Host "Failed to copy to $destinationFile - file doesn't exist after copy" -ForegroundColor Red
                       }
+                  } catch {
+                      Write-Host "Error copying file: $_" -ForegroundColor Red
                   }
-                  
-                  # Get commit message for reference
-                  $commitMessage = & git log -1 --pretty=%B $commitNum
-                  Write-Host "Commit Message: $commitMessage" -ForegroundColor Cyan
               } else {
-                  Write-Host "No files found using diff-tree. Trying another approach..." -ForegroundColor Yellow
-                  
-                  # Try getting files using git show
-                  $changedFiles = & git show --name-only --pretty="" $commitNum
-                  
-                  foreach($file in $changedFiles) {
-                      if (-not [string]::IsNullOrWhiteSpace($file)) {
-                          [void]$filePathlist.Add($file)
-                          Write-Host ".....Changed File:" $file
-                      }
-                  }
-                  
-                  if ($filePathlist.Count -eq 0) {
-                      Write-Host "Still no files found. This might be an empty commit." -ForegroundColor Yellow
-                  }
+                  Write-Host "Source file not found: $sourceFile" -ForegroundColor Yellow
               }
-          }
-          catch {
-              Write-Error "Error executing git commands: $_"
-              throw
-          }
-          finally {
-              # Go back to the original location
-              Pop-Location
           }
           
-          # Process the changed files
-          foreach($filepath in $filePathlist)
-          {
-              $normalizedPath = $filepath.Replace("/","\")
-              $filename = Split-Path $normalizedPath -leaf
-              $path = Split-Path -Path $normalizedPath
-              
-              # Create the destination directory structure
-              $destinationPath = Join-Path $destDir $path
-              if (!(Test-Path -path $destinationPath) -and -not [string]::IsNullOrWhiteSpace($path)) {
-                  New-Item $destinationPath -Type Directory -Force
-                  Write-Host "Created directory: $destinationPath" -ForegroundColor Green
+          # List all files in the destination directory
+          Write-Host "======= FILES IN DESTINATION DIRECTORY ======="
+          if (Test-Path -Path $destDir) {
+              $allDestFiles = Get-ChildItem -Path $destDir -Recurse -File | Select-Object -ExpandProperty FullName
+              foreach ($file in $allDestFiles) {
+                  Write-Host $file
               }
-              
-              $sourcePath = Join-Path $sourceDir $normalizedPath
-              if (Test-Path -Path $sourcePath -PathType Leaf) {
-                  # If path is empty (file in root), adjust destination path
-                  if ([string]::IsNullOrWhiteSpace($path)) {
-                      $destinationPath = $destDir
-                  }
-                  
-                  Write-Host "Copying File: $sourcePath to $destinationPath" -ForegroundColor Green
-                  Copy-Item -Path $sourcePath -Destination $destinationPath -Force
-              }
-              else {
-                  Write-Host "Warning: Source file not found: $sourcePath" -ForegroundColor Yellow
-              }
+              Write-Host "Total files found in destination: $($allDestFiles.Count)"
+          } else {
+              Write-Host "Destination directory does not exist" -ForegroundColor Red
+          }
+          Write-Host "=============================================="
+          
+          # Create a summary file
+          $summaryFile = "$destDir\change-summary.md"
+          "# Changes in commit $commitSha" | Out-File -FilePath $summaryFile
+          "## Previous commit: $previousCommitSha" | Out-File -FilePath $summaryFile -Append
+          "## Total files changed: $fileCount" | Out-File -FilePath $summaryFile -Append
+          "" | Out-File -FilePath $summaryFile -Append
+          "## Changed Files:" | Out-File -FilePath $summaryFile -Append
+          foreach ($file in $changedFiles) {
+              "- $file" | Out-File -FilePath $summaryFile -Append
+          }
+          
+          "" | Out-File -FilePath $summaryFile -Append
+          "## Copied Files:" | Out-File -FilePath $summaryFile -Append
+          foreach ($file in $copiedFiles) {
+              "- $file" | Out-File -FilePath $summaryFile -Append
+          }
+          
+          Write-Host "Total files copied: $($copiedFiles.Count)" -ForegroundColor Green
+          
+          if ($fileCount -eq 0) {
+              Write-Host "No files were changed in this commit." -ForegroundColor Yellow
+              Write-Host "##vso[task.logissue type=warning]No files were changed in this commit."
           }
       }
-      
-      try
-      {
-          GetFilesFromCommits
-      }
-      catch
-      {
+      catch {
           $ErrorMessage = $_.Exception.Message
           Write-Error "Exception: $ErrorMessage occurred while executing the script."
+          Write-Host "##vso[task.logissue type=error]$ErrorMessage"
       }
+      finally {
+          # Go back to the original location
+          Pop-Location
+      }
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+
 - task: PublishBuildArtifacts@1
+  displayName: 'Publish Changed Files'
   inputs:
-    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-    ArtifactName: 'drop'
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)/changed-files'
+    ArtifactName: 'changed-files-$(Build.SourceVersion)'
     publishLocation: 'Container'
