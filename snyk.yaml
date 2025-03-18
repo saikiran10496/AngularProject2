@@ -1,0 +1,60 @@
+trigger:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - group: "SECURE_TOKENS"
+  - name: snyk_token
+    value: $[variables.SNYKTOKEN]
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: "18.x"
+    displayName: "Install Node.js"
+
+  - script: | 
+      SNYK_TOKEN=$(snyk_token)
+      export SNYK_TOKEN
+
+      # Install Angular dependencies
+      npm install 
+
+      # Build the Angular project
+      npm run build 
+
+      # Download and configure Snyk CLI
+      curl --compressed https://downloads.snyk.io/cli/stable/snyk-linux -o snyk
+      chmod +x ./snyk
+      mv ./snyk /usr/local/bin/
+
+      # Install snyk-to-html for report generation
+      npm install snyk-to-html -g
+
+      # Create results directory
+      mkdir -p results
+
+      # Authenticate Snyk
+      snyk auth $(SNYK_TOKEN)
+
+      # Run dependency security scan (SCA)
+      snyk test --all-projects --json-file-output=results/oss.json
+
+      # Run Static Code Analysis (SAST)
+      snyk code test --sarif-file-output=results/sast.sarif
+
+      # Monitor dependencies for continuous tracking
+      snyk monitor --all-projects
+
+      # Convert results to HTML
+      snyk-to-html -o results/oss.html < results/oss.json
+      snyk-to-html -o results/sast.html < results/sast.sarif
+    env:
+      SNYK_TOKEN: $(SNYK_TOKEN)
+    displayName: "Integrate SCA, SAST & Monitor using Snyk in Angular"
+
+  - publish: $(System.DefaultWorkingDirectory)/results
+    artifact: results
+    displayName: "Publish Snyk Scan Results"
